@@ -18,18 +18,27 @@ void _flutterSmsSetupBackgroundChannel(
   WidgetsFlutterBinding.ensureInitialized();
 
   backgroundChannel.setMethodCallHandler((call) async {
+    print('a1');
     if (call.method == HANDLE_BACKGROUND_MESSAGE) {
+      print('a2');
       final CallbackHandle handle =
           CallbackHandle.fromRawHandle(call.arguments['handle']);
+      print('a3');
       final Function handlerFunction =
           PluginUtilities.getCallbackFromHandle(handle)!;
+      print('a4');
       try {
+        print('a5');
         await handlerFunction(SmsMessage.fromMap(
             call.arguments['message'], INCOMING_SMS_COLUMNS));
+        print('a6');
       } catch (e) {
+        print('a7');
         print('Unable to handle incoming background message.');
+        print('a8');
         print(e);
       }
+      print('a9');
       return Future<void>.value();
     }
   });
