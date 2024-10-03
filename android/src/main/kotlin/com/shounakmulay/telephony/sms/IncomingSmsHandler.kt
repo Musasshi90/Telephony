@@ -5,6 +5,8 @@ import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.database.Cursor
+import android.net.Uri
 import android.os.Process
 import android.provider.Telephony
 import android.telephony.SmsMessage
@@ -44,11 +46,45 @@ class IncomingSmsReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
+        Log.d(IncomingSmsReceiver.javaClass.name, "onReceive")
         ContextHolder.applicationContext = context.applicationContext
         val smsList = Telephony.Sms.Intents.getMessagesFromIntent(intent)
         val messagesGroupedByOriginatingAddress = smsList.groupBy { it.originatingAddress }
         messagesGroupedByOriginatingAddress.forEach { group ->
             processIncomingSms(context, group.value)
+        }
+        val bundle = intent?.extras
+        if (bundle != null) {
+            val pdus = bundle.get("pdus") as Array<*>
+            val messages = pdus.map { pdu ->
+                SmsMessage.createFromPdu(pdu as ByteArray)
+            }
+
+            combineAndProcessMessages(context, messages)
+        }
+    }
+
+    private fun combineAndProcessMessages(context: Context, messages: List<SmsMessage>) {
+        val combinedMessages = mutableMapOf<String, String>() // Key: originating address, Value: combined message
+
+        for (message in messages) {
+            val originatingAddress = message.originatingAddress
+            val messageBody = message.messageBody.trim()
+
+            if (originatingAddress != null) {
+                if (combinedMessages.containsKey(originatingAddress)) {
+                    combinedMessages[originatingAddress] = "${combinedMessages[originatingAddress]} $messageBody"
+                } else {
+                    combinedMessages[originatingAddress] = messageBody
+                }
+            }
+        }
+
+        // Log or send combined messages to Flutter
+        for ((address, fullMessage) in combinedMessages) {
+            Log.d(IncomingSmsReceiver.javaClass.name, "Combined message from $address: $fullMessage")
+            // Send this combined message to your Flutter app via a MethodChannel
+            // Send this combined message to Flutter
         }
     }
 
@@ -68,25 +104,31 @@ class IncomingSmsReceiver : BroadcastReceiver() {
             if (index > 0) {
                 messageMap[MESSAGE_BODY] = (messageMap[MESSAGE_BODY] as String)
                     .plus(smsMessage.messageBody.trim())
+                Log.d(IncomingSmsReceiver.javaClass.name, "Incoming Message:" + messageMap[MESSAGE_BODY] as String)
             }
         }
         if (IncomingSmsHandler.isApplicationForeground(context)) {
             val args = HashMap<String, Any>()
             args[MESSAGE] = messageMap
             foregroundSmsChannel?.invokeMethod(ON_MESSAGE, args)
-            Log.d(IncomingSmsReceiver.javaClass.name,"0")
+            if (foregroundSmsChannel == null) {
+                Log.d(IncomingSmsReceiver.javaClass.name, "foregroundSmsChannel is null")
+            } else {
+                Log.d(IncomingSmsReceiver.javaClass.name, "foregroundSmsChannel is not null")
+            }
+            Log.d(IncomingSmsReceiver.javaClass.name, "0")
         } else {
-            Log.d(IncomingSmsReceiver.javaClass.name,"9")
+            Log.d(IncomingSmsReceiver.javaClass.name, "9")
             val preferences =
                 context.getSharedPreferences(SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
-            Log.d(IncomingSmsReceiver.javaClass.name,"10")
+            Log.d(IncomingSmsReceiver.javaClass.name, "10")
             val disableBackground =
                 preferences.getBoolean(SHARED_PREFS_DISABLE_BACKGROUND_EXE, false)
-            Log.d(IncomingSmsReceiver.javaClass.name,"11")
+            Log.d(IncomingSmsReceiver.javaClass.name, "11")
             if (!disableBackground) {
-                Log.d(IncomingSmsReceiver.javaClass.name,"12")
+                Log.d(IncomingSmsReceiver.javaClass.name, "12")
                 processInBackground(context, messageMap)
-                Log.d(IncomingSmsReceiver.javaClass.name,"13")
+                Log.d(IncomingSmsReceiver.javaClass.name, "13")
             }
         }
     }
@@ -94,23 +136,23 @@ class IncomingSmsReceiver : BroadcastReceiver() {
     private fun processInBackground(context: Context, sms: HashMap<String, Any?>) {
         IncomingSmsHandler.apply {
             if (!isIsolateRunning.get()) {
-                Log.d(IncomingSmsReceiver.javaClass.name,"1")
+                Log.d(IncomingSmsReceiver.javaClass.name, "1")
                 initialize(context)
-                Log.d(IncomingSmsReceiver.javaClass.name,"2")
+                Log.d(IncomingSmsReceiver.javaClass.name, "2")
                 val preferences =
                     context.getSharedPreferences(SHARED_PREFERENCES_NAME, Context.MODE_PRIVATE)
-                Log.d(IncomingSmsReceiver.javaClass.name,"3")
+                Log.d(IncomingSmsReceiver.javaClass.name, "3")
                 val backgroundCallbackHandle =
                     preferences.getLong(SHARED_PREFS_BACKGROUND_SETUP_HANDLE, 0)
-                Log.d(IncomingSmsReceiver.javaClass.name,"4")
+                Log.d(IncomingSmsReceiver.javaClass.name, "4")
                 startBackgroundIsolate(context, backgroundCallbackHandle)
-                Log.d(IncomingSmsReceiver.javaClass.name,"5")
+                Log.d(IncomingSmsReceiver.javaClass.name, "5")
                 backgroundMessageQueue.add(sms)
-                Log.d(IncomingSmsReceiver.javaClass.name,"6")
+                Log.d(IncomingSmsReceiver.javaClass.name, "6")
             } else {
-                Log.d(IncomingSmsReceiver.javaClass.name,"7")
+                Log.d(IncomingSmsReceiver.javaClass.name, "7")
                 executeDartCallbackInBackgroundIsolate(context, sms)
-                Log.d(IncomingSmsReceiver.javaClass.name,"8")
+                Log.d(IncomingSmsReceiver.javaClass.name, "8")
             }
         }
     }
@@ -159,23 +201,23 @@ object IncomingSmsHandler : MethodChannel.MethodCallHandler {
      * Also initializes the method channel on the android side
      */
     fun startBackgroundIsolate(context: Context, callbackHandle: Long) {
-        Log.d(IncomingSmsReceiver.javaClass.name,"13")
+        Log.d(IncomingSmsReceiver.javaClass.name, "13")
         val appBundlePath = flutterLoader.findAppBundlePath()
-        Log.d(IncomingSmsReceiver.javaClass.name,"14")
+        Log.d(IncomingSmsReceiver.javaClass.name, "14")
         val flutterCallback = FlutterCallbackInformation.lookupCallbackInformation(callbackHandle)
-        Log.d(IncomingSmsReceiver.javaClass.name,"15")
+        Log.d(IncomingSmsReceiver.javaClass.name, "15")
         val dartEntryPoint =
             DartExecutor.DartCallback(context.assets, appBundlePath, flutterCallback)
-        Log.d(IncomingSmsReceiver.javaClass.name,"16")
+        Log.d(IncomingSmsReceiver.javaClass.name, "16")
         backgroundFlutterEngine = FlutterEngine(context, flutterLoader, FlutterJNI())
-        Log.d(IncomingSmsReceiver.javaClass.name,"17")
+        Log.d(IncomingSmsReceiver.javaClass.name, "17")
         backgroundFlutterEngine.dartExecutor.executeDartCallback(dartEntryPoint)
-        Log.d(IncomingSmsReceiver.javaClass.name,"18")
+        Log.d(IncomingSmsReceiver.javaClass.name, "18")
         backgroundChannel =
             MethodChannel(backgroundFlutterEngine.dartExecutor, Constants.CHANNEL_SMS_BACKGROUND)
-        Log.d(IncomingSmsReceiver.javaClass.name,"19")
+        Log.d(IncomingSmsReceiver.javaClass.name, "19")
         backgroundChannel.setMethodCallHandler(this)
-        Log.d(IncomingSmsReceiver.javaClass.name,"20")
+        Log.d(IncomingSmsReceiver.javaClass.name, "20")
     }
 
     /**
@@ -205,29 +247,29 @@ object IncomingSmsHandler : MethodChannel.MethodCallHandler {
         context: Context,
         message: HashMap<String, Any?>
     ) {
-        Log.d(IncomingSmsReceiver.javaClass.name,"21")
+        Log.d(IncomingSmsReceiver.javaClass.name, "21")
         if (!this::backgroundChannel.isInitialized) {
-            Log.d(IncomingSmsReceiver.javaClass.name,"22")
+            Log.d(IncomingSmsReceiver.javaClass.name, "22")
             throw RuntimeException(
                 "setBackgroundChannel was not called before messages came in, exiting."
             )
-            Log.d(IncomingSmsReceiver.javaClass.name,"23")
+            Log.d(IncomingSmsReceiver.javaClass.name, "23")
         }
-        Log.d(IncomingSmsReceiver.javaClass.name,"24")
+        Log.d(IncomingSmsReceiver.javaClass.name, "24")
         val args: MutableMap<String, Any?> = HashMap()
-        Log.d(IncomingSmsReceiver.javaClass.name,"25")
+        Log.d(IncomingSmsReceiver.javaClass.name, "25")
         if (backgroundMessageHandle == null) {
-            Log.d(IncomingSmsReceiver.javaClass.name,"26")
+            Log.d(IncomingSmsReceiver.javaClass.name, "26")
             backgroundMessageHandle = getBackgroundMessageHandle(context)
-            Log.d(IncomingSmsReceiver.javaClass.name,"27")
+            Log.d(IncomingSmsReceiver.javaClass.name, "27")
         }
-        Log.d(IncomingSmsReceiver.javaClass.name,"28")
+        Log.d(IncomingSmsReceiver.javaClass.name, "28")
         args[HANDLE] = backgroundMessageHandle
-        Log.d(IncomingSmsReceiver.javaClass.name,"29")
+        Log.d(IncomingSmsReceiver.javaClass.name, "29")
         args[MESSAGE] = message
-        Log.d(IncomingSmsReceiver.javaClass.name,"30")
+        Log.d(IncomingSmsReceiver.javaClass.name, "30")
         backgroundChannel.invokeMethod(HANDLE_BACKGROUND_MESSAGE, args)
-        Log.d(IncomingSmsReceiver.javaClass.name,"31")
+        Log.d(IncomingSmsReceiver.javaClass.name, "31")
     }
 
     /**

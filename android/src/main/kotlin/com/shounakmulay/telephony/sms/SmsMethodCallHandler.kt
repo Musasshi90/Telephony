@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import com.shounakmulay.telephony.PermissionsController
 import com.shounakmulay.telephony.utils.ActionType
